@@ -1,6 +1,45 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
 [project]
-name = "dash-fullcalendar-fork"
-version = "0.1.0"
-description = "Add your description here"
-requires-python = ">=3.13"
-dependencies = []
+name = "skinnycal"
+version = "0.1.5"
+description = "A Plotly Dash wrapper for FullCalendar with premium (Scheduler) plugins bundled"
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.9"
+authors = [
+    { name = "Pepijn Wissing", email = "pepijn.wissing@cqm.nl" },
+]
+keywords = ["dash", "plotly", "fullcalendar", "scheduler", "calendar"]
+classifiers = [
+    "Framework :: Dash",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Operating System :: OS Independent",
+]
+dependencies = [
+    "dash>=2.0.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/PepijnWissing/skinnyCal"
+Repository = "https://github.com/PepijnWissing/skinnyCal"
+Issues = "https://github.com/PepijnWissing/skinnyCal/issues"
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.packages.find]
+include = ["dash_fullcalendar*"]
+exclude = ["tests*", "src*", "deps*", "inst*", "man*", "R*"]
+
+[tool.setuptools.package-data]
+dash_fullcalendar = [
+    "*.js",
+    "*.js.map",
+    "*.js.LICENSE.txt",
+    "*.json",
+]

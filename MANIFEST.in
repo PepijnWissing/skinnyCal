@@ -1,11 +1,3 @@
-include dash_fullcalendar/dash_fullcalendar.min.js
-include dash_fullcalendar/dash_fullcalendar.min.js.map
-include dash_fullcalendar/async-*.js
-include dash_fullcalendar/async-*.js.map
-include dash_fullcalendar/*-shared.js
-include dash_fullcalendar/*-shared.js.map
-include dash_fullcalendar/metadata.json
-include dash_fullcalendar/package-info.json
 include README.md
 include LICENSE
-include package.json
+recursive-include dash_fullcalendar *.js *.js.map *.js.LICENSE.txt *.json
