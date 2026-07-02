@@ -4,13 +4,14 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "skinnycal"
-version = "0.1.6"
+version = "0.1.7"
 description = "A Plotly Dash wrapper for FullCalendar with premium (Scheduler) plugins bundled"
 readme = "README.md"
 license = { file = "LICENSE" }
 requires-python = ">=3.9"
 authors = [
     { name = "Pepijn Wissing", email = "pepijn.wissing@cqm.nl" },
+    { name = "Stefan ten Eikelder", email = "stefan.ten.eikelder@cqm.nl" },
 ]
 keywords = ["dash", "plotly", "fullcalendar", "scheduler", "calendar"]
 classifiers = [

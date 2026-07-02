@@ -1,8 +1,7 @@
 # dash-fullcalendar — Premium-enabled fork
 
 This is a patched fork of [`dash-fullcalendar`](https://github.com/ScottTpirate/dash-fullcalendar)
-(PyPI `dash-fullcalendar` 0.1.3) created for the **ATOM** project (ASML Academy
-Training Optimization Model). It exists for one reason: to make FullCalendar
+(PyPI `dash-fullcalendar` 0.1.3). It exists for one reason: to make FullCalendar
 **Premium** (Scheduler) resource views actually work in Plotly Dash.
 
 Fork version: **`0.1.3+premium`**.
@@ -100,7 +99,7 @@ FullCalendar when the resource actually changed (null otherwise).
 
 ## Interactive additions (`0.1.4+premium`)
 
-Added for the ATOM calendar PoC (drag-to-reschedule with confirm/revert, plus
+Added for a calendar PoC (drag-to-reschedule with confirm/revert, plus
 hover tooltips). All in `src/lib/components/FullCalendar.react.js`.
 
 **New `command` types** (the imperative bridge; previously only
@@ -168,26 +167,26 @@ earlier premium-only patch could skip it because no props changed; the
 > ⚠️ **Spaces-in-path gotcha (Windows).** `dash-generate-components` shells out
 > to `node <extract-meta.js>` with the path to `extract-meta.js` **unquoted**
 > (dash `component_generator.py`). When that path (inside the consuming venv's
-> `site-packages/dash/`) contains spaces — as the ATOM checkout does — `node`
+> `site-packages/dash/`) contains spaces — as some consumer checkouts do — `node`
 > receives a truncated path and fails with `Cannot find module`. Work around it
 > without editing dash by running the backend step through a **space-free NTFS
 > junction** to the venv-bearing repo, e.g.:
 >
 > ```powershell
-> New-Item -ItemType Junction -Path C:\atomwf   -Target "<...>\git"
+> New-Item -ItemType Junction -Path C:\appwf   -Target "<...>\git"
 > New-Item -ItemType Junction -Path C:\dfcfork  -Target "<...>\dash-fullcalendar-fork"
 > ```
 > ```bash
 > cd /c/dfcfork
 > MODULES_PATH="$(pwd)/node_modules" NODE_PATH=node_modules \
->   /c/atomwf/.venv/Scripts/python.exe -m dash.development.component_generator \
+>   /c/appwf/.venv/Scripts/python.exe -m dash.development.component_generator \
 >   ./src/lib/components dash_fullcalendar -p package-info.json \
 >   --r-prefix '' --jl-prefix '' --ignore '\.test\.'
 > ```
 > Invoking the junctioned `python.exe` makes `importlib.resources.files("dash")`
-> resolve to the no-space `C:\atomwf\...` path, so `extract-meta.js` runs.
+> resolve to the no-space `C:\appwf\...` path, so `extract-meta.js` runs.
 
-Build the Python wheel. The ATOM venv is uv-managed and ships **no `pip` or PyPA
+Build the Python wheel. The consumer venv used during development is uv-managed and ships **no `pip` or PyPA
 `build` frontend**, and `import build` from this directory would shadow-import
 the local `build/` folder — so use the legacy setuptools path with `wheel`
 installed via `uv pip` (which works on this Windows machine where `uv build` /
@@ -204,9 +203,9 @@ After the build the bundle contains the premium symbols
 plus the new `updateEvent` / `revert` / `eventMouseEnter` symbols, and emits a
 single `.min.js` with no async chunk files.
 
-## How ATOM consumes this
+## How a consumer project consumes this
 
-The built wheel is vendored into the ATOM repo at
+The built wheel can be vendored into a consuming repo at
 `vendor/wheels/dash_fullcalendar-0.1.3+premium-py3-none-any.whl` and referenced
 from the root `pyproject.toml`:
 
@@ -215,7 +214,7 @@ from the root `pyproject.toml`:
 dash-fullcalendar = {path = "vendor/wheels/dash_fullcalendar-0.1.3+premium-py3-none-any.whl"}
 ```
 
-To ship a new build: rebuild the wheel here, copy it into ATOM's
+To ship a new build: rebuild the wheel here, copy it into the consumer's
 `vendor/wheels/`, update the source path if the filename changes, and
 `uv sync`.
 
@@ -225,5 +224,5 @@ This wrapper is MIT (© Scott Kilgore, upstream). The **bundled** `@fullcalendar
 premium plugin code is governed by FullCalendar's own license. The
 `GPL-My-Project-Is-Open-Source` and `CC-Attribution-NonCommercial-NoDerivatives`
 keys are valid only for open-source / non-commercial evaluation. **Commercial or
-internal-business production use at ASML requires a purchased FullCalendar
+internal-business production use requires a purchased FullCalendar
 Scheduler commercial license.**
