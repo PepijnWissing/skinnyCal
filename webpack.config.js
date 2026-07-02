@@ -97,7 +97,7 @@ module.exports = (env, argv) => {
                         chunks: 'all',
                         minSize: 0,
                         minChunks: 2,
-                        name: 'dash_fullcalendar-shared'
+                        name: 'skinnycal-shared'
                     }
                 }
             }

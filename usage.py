@@ -1,5 +1,5 @@
 from dash import Dash, html, Input, Output
-import dash_fullcalendar as dcal
+import skinnycal as dcal
 
 app = Dash(__name__)
 

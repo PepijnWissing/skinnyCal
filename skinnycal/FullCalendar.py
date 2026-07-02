@@ -487,7 +487,7 @@ Keyword arguments:
     Debounce (ms) for the resize handler.  See FullCalendar docs."""
     _children_props: typing.List[str] = ['moreLinkContent', 'allDayContent', 'slotLaneContent', 'slotLabelContent', 'dayHeaderContent', 'dayCellContent', 'noEventsContent', 'eventContent']
     _base_nodes = ['moreLinkContent', 'allDayContent', 'slotLaneContent', 'slotLabelContent', 'dayHeaderContent', 'dayCellContent', 'noEventsContent', 'eventContent', 'children']
-    _namespace = 'dash_fullcalendar'
+    _namespace = 'skinnycal'
     _type = 'FullCalendar'
 
 

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "skinnycal"
-version = "0.1.5"
+version = "0.1.6"
 description = "A Plotly Dash wrapper for FullCalendar with premium (Scheduler) plugins bundled"
 readme = "README.md"
 license = { file = "LICENSE" }
@@ -33,11 +33,11 @@ Issues = "https://github.com/PepijnWissing/skinnyCal/issues"
 include-package-data = true
 
 [tool.setuptools.packages.find]
-include = ["dash_fullcalendar*"]
+include = ["skinnycal*"]
 exclude = ["tests*", "src*", "deps*", "inst*", "man*", "R*"]
 
 [tool.setuptools.package-data]
-dash_fullcalendar = [
+skinnycal = [
     "*.js",
     "*.js.map",
     "*.js.LICENSE.txt",
