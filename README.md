@@ -58,6 +58,45 @@ dcal.FullCalendar(
 )
 ```
 
+### Per-event decoration
+
+Every event block gets `data-event-id="<event id>"` on its `.fc-event` root, so your
+own JS can address one block without reaching into FullCalendar internals. Per-block
+CSS classes and `data-*` attributes are driven by data — no JS callbacks needed:
+
+```python
+dcal.FullCalendar(
+    id="cal",
+    events=[{
+        "id": "bead-42",
+        "title": "Module 3",
+        "start": "2025-08-01",
+        "extendedProps": {
+            "classNames": ["is-conflict-hard"],   # -> classes on this block
+            "trainer": "AB",                      # -> data-trainer, see below
+        },
+    }],
+    eventDataAttributes=["trainer"],   # mirror these extendedProps keys as data-*
+)
+```
+
+```js
+document.querySelector('[data-event-id="bead-42"]').dataset.trainer  // "AB"
+```
+
+Then style it however you like:
+
+```css
+.fc-event.is-conflict-hard { border-color: #c0392b; }
+```
+
+Because FullCalendar re-evaluates event classes when an event's data changes, you can
+toggle state by returning an updated `events` list from a callback — no page reload,
+and no need to re-render the whole calendar yourself. `eventDataAttributes` keys are
+kebab-cased (`courseCode` → `data-course-code` → `el.dataset.courseCode`) and are
+applied when a block mounts; see `PREMIUM_FORK_CHANGES.md` for the caveat about
+imperative `command` mutations. `usage.py` is a runnable demo of all of this.
+
 ---
 
 ## Repository layout

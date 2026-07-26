@@ -20,6 +20,35 @@ import scrollGridPlugin from "@fullcalendar/scrollgrid";
 
 
 /**
+ * Normalize FullCalendar's ClassNamesGenerator shape
+ * (`string | string[] | (arg) => string | string[]`) into a plain array, so a
+ * caller-supplied `eventClassNames` and the per-event `extendedProps.classNames`
+ * channel can be concatenated instead of one clobbering the other.
+ */
+const toClassArray = (value, arg) => {
+    const resolved = typeof value === 'function' ? value(arg) : value;
+    if (!resolved) {
+        return [];
+    }
+    if (Array.isArray(resolved)) {
+        return resolved;
+    }
+    if (typeof resolved === 'string') {
+        return resolved.split(/\s+/).filter(Boolean);
+    }
+    return [];
+};
+
+/**
+ * camelCase -> kebab-case, so an `extendedProps` key mirrored by
+ * `eventDataAttributes` lands as `data-course-code` and reads back as
+ * `el.dataset.courseCode` (the standard HTML dataset mapping).
+ */
+const toDataAttrName = (key) => (
+    'data-' + String(key).replace(/[A-Z]/g, (c) => '-' + c.toLowerCase())
+);
+
+/**
  * DashFullCalendar – thin Dash wrapper around @fullcalendar/react.
  * ALL props (except the Dash house‑keeping ones) are forwarded verbatim.
  * No monkey‑patching of FullCalendar internals.
@@ -43,6 +72,12 @@ const DashFullCalendar = ({
     // forwarded to FullCalendar as options — our handlers are wired below).
     eventMouseEnter: _eventMouseEnter,
     eventMouseLeave: _eventMouseLeave,
+    // Per-event decoration seam. These three are pulled out because we install
+    // internal defaults for them; our handlers compose the caller's value in
+    // rather than replacing it (see handleEventClassNames / handleEventDidMount).
+    eventClassNames: userEventClassNames,
+    eventDidMount: userEventDidMount,
+    eventDataAttributes,
     schedulerLicenseKey,
     plugins: userPlugins,
     // anything else the user supplies:
@@ -215,7 +250,7 @@ const DashFullCalendar = ({
     );
 
     const handleUnselect = useCallback(
-        (info) => {
+        (_info) => {
             if (setProps) {
                 setProps({unselect: true});
             }
@@ -362,6 +397,54 @@ const DashFullCalendar = ({
         [setProps]
     );
 
+    /* ---------- Per-event decoration seam ---------- */
+
+    // Declarative per-event class channel: an event dict may carry
+    // `extendedProps.classNames`, which becomes real classes on that block's
+    // `.fc-event` root. FullCalendar re-evaluates eventClassNames whenever the
+    // event's data changes, so Dash can toggle conflict/role state by updating
+    // only the affected events. Composes with a caller-supplied eventClassNames.
+    const handleEventClassNames = useCallback(
+        (arg) => [
+            ...toClassArray(userEventClassNames, arg),
+            ...toClassArray(arg.event.extendedProps.classNames)
+        ],
+        [userEventClassNames]
+    );
+
+    // Stable per-event DOM hook: stamp the event's public id onto the block root
+    // so wrapper JS can select `[data-event-id="<id>"]` instead of reaching into
+    // FullCalendar's internal `el.fcSeg`. Optionally mirrors whitelisted
+    // extendedProps keys as `data-*` too (see eventDataAttributes).
+    const handleEventDidMount = useCallback(
+        (info) => {
+            // Guarded: events without an id would otherwise all collect
+            // data-event-id="", making `[data-event-id]` useless as a selector.
+            if (info.event.id) {
+                info.el.setAttribute("data-event-id", info.event.id);
+            }
+            if (Array.isArray(eventDataAttributes)) {
+                eventDataAttributes.forEach((key) => {
+                    const value = info.event.extendedProps[key];
+                    if (typeof value === "undefined" || value === null) {
+                        return;
+                    }
+                    info.el.setAttribute(
+                        toDataAttrName(key),
+                        typeof value === "object"
+                            ? JSON.stringify(value)
+                            : String(value)
+                    );
+                });
+            }
+            // Last, so a caller-supplied handler can inspect or override.
+            if (typeof userEventDidMount === "function") {
+                userEventDidMount(info);
+            }
+        },
+        [eventDataAttributes, userEventDidMount]
+    );
+
     return (
         <div id={id}>
             <FullCalendar
@@ -391,6 +474,8 @@ const DashFullCalendar = ({
                 eventsSet={handleEventsSet}
                 eventMouseEnter={handleEventMouseEnter}
                 eventMouseLeave={handleEventMouseLeave}
+                eventClassNames={handleEventClassNames}
+                eventDidMount={handleEventDidMount}
             />
         </div>
     );
@@ -855,7 +940,14 @@ DashFullCalendar.propTypes = {
      */
     eventOrderStrict: PropTypes.bool,
     /**
-     * Class names for events.  See FullCalendar docs.
+     * Class names applied to every event block. Composed with — not replaced by —
+     * the per-event `extendedProps.classNames` channel: any event dict carrying
+     * `{"extendedProps": {"classNames": ["is-conflict-hard", ...]}}` gets those
+     * classes on its `.fc-event` root, and FullCalendar re-evaluates them when
+     * the event's data changes, so Dash can toggle per-block state by updating
+     * only the affected events. (FullCalendar's native top-level `classNames`
+     * key on an event object also still works and is merged in by FullCalendar.)
+     * See FullCalendar docs.
      */
     eventClassNames: PropTypes.oneOfType([PropTypes.array, PropTypes.object, PropTypes.string, PropTypes.func]),
     /**
@@ -863,7 +955,29 @@ DashFullCalendar.propTypes = {
      */
     eventContent: PropTypes.oneOfType([PropTypes.func, PropTypes.node]),
     /**
-     * Callback after an event is mounted.  See FullCalendar docs.
+     * List of `extendedProps` keys to mirror onto each event block's `.fc-event`
+     * root as `data-*` attributes, so wrapper JS can read event data off the DOM
+     * instead of FullCalendar internals. Keys are kebab-cased
+     * (`courseCode` -> `data-course-code`, i.e. `el.dataset.courseCode`);
+     * `null`/missing values are skipped and objects/arrays are JSON-encoded.
+     *
+     * Every block additionally always gets `data-event-id="<event.id>"` (for
+     * events that have a non-empty id), which needs no configuration.
+     *
+     * Caveat: mirroring happens when the block mounts. Replacing the `events`
+     * prop re-parses the source, so blocks remount and the attributes refresh.
+     * In-place mutations via the imperative `command` prop (`setDates`,
+     * `setResources`) and drag/resize reuse the existing element and do not
+     * re-run the mount hook — they also do not change `extendedProps`, so don't
+     * mirror a key you intend to mutate that way.
+     */
+    eventDataAttributes: PropTypes.arrayOf(PropTypes.string),
+    /**
+     * Callback after an event is mounted.  See FullCalendar docs. Not usable from
+     * Dash (functions cannot cross the Python↔JS boundary, so
+     * dash-generate-components drops `func` props); when supplied from React it
+     * runs after skinnycal's own handler has stamped `data-event-id` and any
+     * `eventDataAttributes`.
      */
     eventDidMount: PropTypes.func,
     /**
