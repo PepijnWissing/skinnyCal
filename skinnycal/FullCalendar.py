@@ -3,15 +3,20 @@
 import typing  # noqa: F401
 from typing_extensions import TypedDict, NotRequired, Literal # noqa: F401
 from dash.development.base_component import Component, _explicitize_args
+try:
+    from dash.types import NumberType  # noqa: F401
+except ImportError:
+    # Backwards compatibility for dash<=4.1.0
+    if typing.TYPE_CHECKING:
+        raise
+    NumberType = typing.Union[  # noqa: F401
+        typing.SupportsFloat, typing.SupportsInt, typing.SupportsComplex
+    ]
 
 ComponentSingleType = typing.Union[str, int, float, Component, None]
 ComponentType = typing.Union[
     ComponentSingleType,
     typing.Sequence[ComponentSingleType],
-]
-
-NumberType = typing.Union[
-    typing.SupportsFloat, typing.SupportsInt, typing.SupportsComplex
 ]
 
 
@@ -152,7 +157,15 @@ Keyword arguments:
     Dash callbacks.
 
 - eventClassNames (list | dict | string; optional):
-    Class names for events.  See FullCalendar docs.
+    Class names applied to every event block. Composed with — not
+    replaced by —  the per-event `extendedProps.classNames` channel:
+    any event dict carrying  `{\"extendedProps\": {\"classNames\":
+    [\"is-conflict-hard\", ...]}}` gets those  classes on its
+    `.fc-event` root, and FullCalendar re-evaluates them when  the
+    event's data changes, so Dash can toggle per-block state by
+    updating  only the affected events. (FullCalendar's native
+    top-level `classNames`  key on an event object also still works
+    and is merged in by FullCalendar.)  See FullCalendar docs.
 
 - eventClick (boolean | number | string | dict | list; optional):
     Object containing information about the clicked event, for use in
@@ -166,6 +179,23 @@ Keyword arguments:
 
 - eventContent (a list of or a singular dash component, string or number; optional):
     Custom renderer for events.  See FullCalendar docs.
+
+- eventDataAttributes (list of strings; optional):
+    List of `extendedProps` keys to mirror onto each event block's
+    `.fc-event`  root as `data-*` attributes, so wrapper JS can read
+    event data off the DOM  instead of FullCalendar internals. Keys
+    are kebab-cased  (`courseCode` -> `data-course-code`, i.e.
+    `el.dataset.courseCode`);  `None`/missing values are skipped and
+    objects/arrays are JSON-encoded.    Every block additionally
+    always gets `data-event-id=\"<event.id>\"` (for  events that have
+    a non-empty id), which needs no configuration.    Caveat:
+    mirroring happens when the block mounts. Replacing the `events`
+    prop re-parses the source, so blocks remount and the attributes
+    refresh.  In-place mutations via the imperative `command` prop
+    (`setDates`,  `setResources`) and drag/resize reuse the existing
+    element and do not  re-run the mount hook — they also do not
+    change `extendedProps`, so don't  mirror a key you intend to
+    mutate that way.
 
 - eventDisplay (string; optional):
     Rendering style for events.  See FullCalendar docs.
@@ -604,6 +634,7 @@ Keyword arguments:
         eventOrderStrict: typing.Optional[bool] = None,
         eventClassNames: typing.Optional[typing.Union[typing.Sequence, dict, str, typing.Any]] = None,
         eventContent: typing.Optional[typing.Union[typing.Any, ComponentType]] = None,
+        eventDataAttributes: typing.Optional[typing.Sequence[str]] = None,
         eventDidMount: typing.Optional[typing.Any] = None,
         eventWillUnmount: typing.Optional[typing.Any] = None,
         eventDataTransform: typing.Optional[typing.Any] = None,
@@ -662,9 +693,9 @@ Keyword arguments:
         eventsSet: typing.Optional[typing.Any] = None,
         **kwargs
     ):
-        self._prop_names = ['id', 'allDayClassNames', 'allDayContent', 'allDaySlot', 'allDayText', 'aspectRatio', 'businessHours', 'buttonIcons', 'buttonText', 'command', 'contentHeight', 'customButtons', 'dateClick', 'datesSet', 'dayCellClassNames', 'dayCellContent', 'dayHeaderClassNames', 'dayHeaderContent', 'dayHeaderFormat', 'dayMaxEventRows', 'dayMaxEvents', 'dayMinWidth', 'dayPopoverFormat', 'defaultAllDay', 'dir', 'displayEventEnd', 'displayEventTime', 'dragRevertDuration', 'dragScroll', 'dropAccept', 'droppable', 'editable', 'endParam', 'eventAdd', 'eventBackgroundColor', 'eventBorderColor', 'eventChange', 'eventClassNames', 'eventClick', 'eventColor', 'eventConstraint', 'eventContent', 'eventDisplay', 'eventDrop', 'eventDurationEditable', 'eventLongPressDelay', 'eventMouseEnter', 'eventMouseLeave', 'eventOrder', 'eventOrderStrict', 'eventOverlap', 'eventRemove', 'eventResizableFromStart', 'eventResize', 'eventSources', 'eventStartEditable', 'eventTextColor', 'eventTimeFormat', 'events', 'eventsSet', 'expandRows', 'firstDay', 'fixedWeekCount', 'footerToolbar', 'handleWindowResize', 'headerToolbar', 'height', 'hiddenDays', 'initialDate', 'initialView', 'lazyFetching', 'listDayFormat', 'listDaySideFormat', 'locale', 'locales', 'longPressDelay', 'moreLinkClassNames', 'moreLinkClick', 'moreLinkContent', 'moreLinkText', 'multiMonthMaxColumns', 'multiMonthMinWidth', 'multiMonthTitleFormat', 'navLinkDayClick', 'navLinkHint', 'navLinkWeekClick', 'navLinks', 'nextDayThreshold', 'noEventsClassNames', 'noEventsContent', 'now', 'nowIndicator', 'plugins', 'progressiveEventRendering', 'rerenderDelay', 'resources', 'schedulerLicenseKey', 'scrollTime', 'scrollTimeReset', 'select', 'selectConstraint', 'selectLongPressDelay', 'selectMinDistance', 'selectMirror', 'selectOverlap', 'selectable', 'showNonCurrentDates', 'slotDuration', 'slotLabelClassNames', 'slotLabelContent', 'slotLabelFormat', 'slotLabelInterval', 'slotLaneClassNames', 'slotLaneContent', 'slotMaxTime', 'slotMinTime', 'slotMinWidth', 'snapDuration', 'startParam', 'stickyFooterScrollbar', 'stickyHeaderDates', 'themeSystem', 'timeZoneParam', 'titleFormat', 'unselect', 'unselectAuto', 'unselectCancel', 'validRange', 'viewClassNames', 'views', 'weekNumberCalculation', 'weekNumberFormat', 'weekNumbers', 'weekText', 'weekTextLong', 'weekends', 'windowResizeDelay']
+        self._prop_names = ['id', 'allDayClassNames', 'allDayContent', 'allDaySlot', 'allDayText', 'aspectRatio', 'businessHours', 'buttonIcons', 'buttonText', 'command', 'contentHeight', 'customButtons', 'dateClick', 'datesSet', 'dayCellClassNames', 'dayCellContent', 'dayHeaderClassNames', 'dayHeaderContent', 'dayHeaderFormat', 'dayMaxEventRows', 'dayMaxEvents', 'dayMinWidth', 'dayPopoverFormat', 'defaultAllDay', 'dir', 'displayEventEnd', 'displayEventTime', 'dragRevertDuration', 'dragScroll', 'dropAccept', 'droppable', 'editable', 'endParam', 'eventAdd', 'eventBackgroundColor', 'eventBorderColor', 'eventChange', 'eventClassNames', 'eventClick', 'eventColor', 'eventConstraint', 'eventContent', 'eventDataAttributes', 'eventDisplay', 'eventDrop', 'eventDurationEditable', 'eventLongPressDelay', 'eventMouseEnter', 'eventMouseLeave', 'eventOrder', 'eventOrderStrict', 'eventOverlap', 'eventRemove', 'eventResizableFromStart', 'eventResize', 'eventSources', 'eventStartEditable', 'eventTextColor', 'eventTimeFormat', 'events', 'eventsSet', 'expandRows', 'firstDay', 'fixedWeekCount', 'footerToolbar', 'handleWindowResize', 'headerToolbar', 'height', 'hiddenDays', 'initialDate', 'initialView', 'lazyFetching', 'listDayFormat', 'listDaySideFormat', 'locale', 'locales', 'longPressDelay', 'moreLinkClassNames', 'moreLinkClick', 'moreLinkContent', 'moreLinkText', 'multiMonthMaxColumns', 'multiMonthMinWidth', 'multiMonthTitleFormat', 'navLinkDayClick', 'navLinkHint', 'navLinkWeekClick', 'navLinks', 'nextDayThreshold', 'noEventsClassNames', 'noEventsContent', 'now', 'nowIndicator', 'plugins', 'progressiveEventRendering', 'rerenderDelay', 'resources', 'schedulerLicenseKey', 'scrollTime', 'scrollTimeReset', 'select', 'selectConstraint', 'selectLongPressDelay', 'selectMinDistance', 'selectMirror', 'selectOverlap', 'selectable', 'showNonCurrentDates', 'slotDuration', 'slotLabelClassNames', 'slotLabelContent', 'slotLabelFormat', 'slotLabelInterval', 'slotLaneClassNames', 'slotLaneContent', 'slotMaxTime', 'slotMinTime', 'slotMinWidth', 'snapDuration', 'startParam', 'stickyFooterScrollbar', 'stickyHeaderDates', 'themeSystem', 'timeZoneParam', 'titleFormat', 'unselect', 'unselectAuto', 'unselectCancel', 'validRange', 'viewClassNames', 'views', 'weekNumberCalculation', 'weekNumberFormat', 'weekNumbers', 'weekText', 'weekTextLong', 'weekends', 'windowResizeDelay']
         self._valid_wildcard_attributes =            []
-        self.available_properties = ['id', 'allDayClassNames', 'allDayContent', 'allDaySlot', 'allDayText', 'aspectRatio', 'businessHours', 'buttonIcons', 'buttonText', 'command', 'contentHeight', 'customButtons', 'dateClick', 'datesSet', 'dayCellClassNames', 'dayCellContent', 'dayHeaderClassNames', 'dayHeaderContent', 'dayHeaderFormat', 'dayMaxEventRows', 'dayMaxEvents', 'dayMinWidth', 'dayPopoverFormat', 'defaultAllDay', 'dir', 'displayEventEnd', 'displayEventTime', 'dragRevertDuration', 'dragScroll', 'dropAccept', 'droppable', 'editable', 'endParam', 'eventAdd', 'eventBackgroundColor', 'eventBorderColor', 'eventChange', 'eventClassNames', 'eventClick', 'eventColor', 'eventConstraint', 'eventContent', 'eventDisplay', 'eventDrop', 'eventDurationEditable', 'eventLongPressDelay', 'eventMouseEnter', 'eventMouseLeave', 'eventOrder', 'eventOrderStrict', 'eventOverlap', 'eventRemove', 'eventResizableFromStart', 'eventResize', 'eventSources', 'eventStartEditable', 'eventTextColor', 'eventTimeFormat', 'events', 'eventsSet', 'expandRows', 'firstDay', 'fixedWeekCount', 'footerToolbar', 'handleWindowResize', 'headerToolbar', 'height', 'hiddenDays', 'initialDate', 'initialView', 'lazyFetching', 'listDayFormat', 'listDaySideFormat', 'locale', 'locales', 'longPressDelay', 'moreLinkClassNames', 'moreLinkClick', 'moreLinkContent', 'moreLinkText', 'multiMonthMaxColumns', 'multiMonthMinWidth', 'multiMonthTitleFormat', 'navLinkDayClick', 'navLinkHint', 'navLinkWeekClick', 'navLinks', 'nextDayThreshold', 'noEventsClassNames', 'noEventsContent', 'now', 'nowIndicator', 'plugins', 'progressiveEventRendering', 'rerenderDelay', 'resources', 'schedulerLicenseKey', 'scrollTime', 'scrollTimeReset', 'select', 'selectConstraint', 'selectLongPressDelay', 'selectMinDistance', 'selectMirror', 'selectOverlap', 'selectable', 'showNonCurrentDates', 'slotDuration', 'slotLabelClassNames', 'slotLabelContent', 'slotLabelFormat', 'slotLabelInterval', 'slotLaneClassNames', 'slotLaneContent', 'slotMaxTime', 'slotMinTime', 'slotMinWidth', 'snapDuration', 'startParam', 'stickyFooterScrollbar', 'stickyHeaderDates', 'themeSystem', 'timeZoneParam', 'titleFormat', 'unselect', 'unselectAuto', 'unselectCancel', 'validRange', 'viewClassNames', 'views', 'weekNumberCalculation', 'weekNumberFormat', 'weekNumbers', 'weekText', 'weekTextLong', 'weekends', 'windowResizeDelay']
+        self.available_properties = ['id', 'allDayClassNames', 'allDayContent', 'allDaySlot', 'allDayText', 'aspectRatio', 'businessHours', 'buttonIcons', 'buttonText', 'command', 'contentHeight', 'customButtons', 'dateClick', 'datesSet', 'dayCellClassNames', 'dayCellContent', 'dayHeaderClassNames', 'dayHeaderContent', 'dayHeaderFormat', 'dayMaxEventRows', 'dayMaxEvents', 'dayMinWidth', 'dayPopoverFormat', 'defaultAllDay', 'dir', 'displayEventEnd', 'displayEventTime', 'dragRevertDuration', 'dragScroll', 'dropAccept', 'droppable', 'editable', 'endParam', 'eventAdd', 'eventBackgroundColor', 'eventBorderColor', 'eventChange', 'eventClassNames', 'eventClick', 'eventColor', 'eventConstraint', 'eventContent', 'eventDataAttributes', 'eventDisplay', 'eventDrop', 'eventDurationEditable', 'eventLongPressDelay', 'eventMouseEnter', 'eventMouseLeave', 'eventOrder', 'eventOrderStrict', 'eventOverlap', 'eventRemove', 'eventResizableFromStart', 'eventResize', 'eventSources', 'eventStartEditable', 'eventTextColor', 'eventTimeFormat', 'events', 'eventsSet', 'expandRows', 'firstDay', 'fixedWeekCount', 'footerToolbar', 'handleWindowResize', 'headerToolbar', 'height', 'hiddenDays', 'initialDate', 'initialView', 'lazyFetching', 'listDayFormat', 'listDaySideFormat', 'locale', 'locales', 'longPressDelay', 'moreLinkClassNames', 'moreLinkClick', 'moreLinkContent', 'moreLinkText', 'multiMonthMaxColumns', 'multiMonthMinWidth', 'multiMonthTitleFormat', 'navLinkDayClick', 'navLinkHint', 'navLinkWeekClick', 'navLinks', 'nextDayThreshold', 'noEventsClassNames', 'noEventsContent', 'now', 'nowIndicator', 'plugins', 'progressiveEventRendering', 'rerenderDelay', 'resources', 'schedulerLicenseKey', 'scrollTime', 'scrollTimeReset', 'select', 'selectConstraint', 'selectLongPressDelay', 'selectMinDistance', 'selectMirror', 'selectOverlap', 'selectable', 'showNonCurrentDates', 'slotDuration', 'slotLabelClassNames', 'slotLabelContent', 'slotLabelFormat', 'slotLabelInterval', 'slotLaneClassNames', 'slotLaneContent', 'slotMaxTime', 'slotMinTime', 'slotMinWidth', 'snapDuration', 'startParam', 'stickyFooterScrollbar', 'stickyHeaderDates', 'themeSystem', 'timeZoneParam', 'titleFormat', 'unselect', 'unselectAuto', 'unselectCancel', 'validRange', 'viewClassNames', 'views', 'weekNumberCalculation', 'weekNumberFormat', 'weekNumbers', 'weekText', 'weekTextLong', 'weekends', 'windowResizeDelay']
         self.available_wildcard_properties =            []
         _explicit_args = kwargs.pop('_explicit_args')
         _locals = locals()

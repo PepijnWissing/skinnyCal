@@ -150,6 +150,56 @@ the other command calls (`next`/`prev`/`today`/`changeView`/`getEventById`/
 `getApi`/`setDates`/`info.revert`) confirmed they are all valid — `setResource`
 was the only non-existent call.
 
+## Per-event decoration seam (`0.2.0`)
+
+Consumers that want to decorate an *individual* calendar block (a conflict badge,
+a colored outline on one event) had no supported hook for it. The only way to find
+a specific block's DOM element was `el.fcSeg.eventRange.def.publicId` — a
+FullCalendar **internal**. And the only per-event styling channel was whatever the
+consumer had encoded into the event `title`, which means a full rebuild of the
+`events` prop (and a full calendar re-render) for every state change.
+
+Three additions close that gap **declaratively**, so nothing has to cross the
+Python↔JS boundary as a function:
+
+- **`data-event-id` on every block.** An internal `eventDidMount` stamps
+  `data-event-id="<event.id>"` on the `.fc-event` root, so wrapper JS can use
+  `document.querySelector('[data-event-id="…"]')` instead of `el.fcSeg`. Events
+  with an empty id are skipped, so `[data-event-id]` stays a meaningful selector.
+- **`extendedProps.classNames`.** An internal `eventClassNames` reads that array
+  off each event and applies it as classes on the block. FullCalendar
+  re-evaluates `eventClassNames` when an event's data changes, so state can be
+  toggled by updating only the affected events. (FullCalendar's native
+  *top-level* `classNames` key on an event object keeps working and is merged in
+  by FullCalendar itself; this adds `extendedProps` as a second, equivalent
+  channel so decoration state can live with the rest of a payload.)
+- **`eventDataAttributes`** (new prop) — a list of `extendedProps` keys to mirror
+  onto the block root as `data-*`. Keys are kebab-cased so `courseCode` becomes
+  `data-course-code` / `el.dataset.courseCode`; `None`/missing values are
+  skipped and objects are JSON-encoded. This is what lets consumer JS read event
+  data off the DOM rather than out of FullCalendar internals.
+
+Both hooks follow the wrapper's existing convention for options it implements
+itself: the incoming prop is destructured out of the forwarded `calendarProps`
+under a `user*` alias, and the internal handler **composes** that value in rather
+than clobbering it — a caller-supplied `eventClassNames` (string, array, or
+function) is concatenated ahead of the `extendedProps` classes, and a
+caller-supplied `eventDidMount` runs after the attributes are stamped. `plugins`
+is destructured the same way for the premium resolution above; treat that as the
+pattern for any future option skinnycal needs to own.
+
+> ⚠️ `eventDataAttributes` mirrors at **mount**. Replacing the `events` prop
+> re-parses the source, so blocks remount and the attributes refresh — that is
+> the normal Dash path. In-place `EventApi` mutations (the `setDates` /
+> `setResources` commands, drag, resize) reuse the existing element and do *not*
+> re-run the mount hook. They also do not change `extendedProps`, so the mirrors
+> can't go stale in practice, but don't mirror a key you intend to mutate that
+> way.
+
+`eventDidMount` itself remains `PropTypes.func`, i.e. invisible to Dash — which
+is correct, since a Dash caller could never supply a function anyway. It is only
+reachable from the React demo in `src/demo`.
+
 ## Building
 
 Requires Node.js (built with Node 24 LTS / npm 11).
