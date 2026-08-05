@@ -7,6 +7,13 @@ app = Dash(__name__)
 #   * every block automatically gets data-event-id="<event id>"
 #   * extendedProps.classNames become real classes on that block
 #   * eventDataAttributes mirrors whitelisted extendedProps keys as data-*
+#
+# In-place event updates (skinnycal >= 0.3.0):
+#   * command {'type': 'setProps', 'updates': [...]} changes an existing
+#     event's title / extendedProps WITHOUT replacing the `events` prop, so the
+#     block is NOT remounted, and any eventDataAttributes data-* mirrors refresh.
+#     Contrast with the "Toggle conflict block" button below, which returns a
+#     new events list and therefore remounts every block.
 app.index_string = """<!DOCTYPE html>
 <html>
     <head>
@@ -56,6 +63,7 @@ def build_events(conflict_id):
 app.layout = html.Div(
     [
         html.Button("Toggle conflict block", id="toggle"),
+        html.Button("Rename Audit in place (setProps)", id="setprops"),
         dcal.FullCalendar(
             id="cal",
             initialView="dayGridMonth",
@@ -81,6 +89,32 @@ app.layout = html.Div(
 @app.callback(Output("clicked", "children"), Input("cal", "dateClick"))
 def show_click(date):
     return f"You clicked {date}" if date else "Click a date on the calendar."
+
+
+@app.callback(
+    Output("cal", "command"),
+    Input("setprops", "n_clicks"),
+    prevent_initial_call=True,
+)
+def rename_audit(n_clicks):
+    """Update the Audit event's title and its `trainer` extendedProp in place.
+
+    Because this goes through the `setProps` command rather than replacing the
+    `events` prop, the Audit block is mutated on its existing DOM element (no
+    remount) and its `data-trainer` mirror refreshes to the new value. `n_clicks`
+    doubles as the nonce so repeated clicks change the command by reference.
+    """
+    return {
+        "type": "setProps",
+        "nonce": n_clicks,
+        "updates": [
+            {
+                "id": "audit",
+                "title": f"Audit (renamed x{n_clicks})",
+                "extendedProps": {"trainer": "ZZ"},
+            }
+        ],
+    }
 
 
 @app.callback(

@@ -1,25 +1,49 @@
+"""Selenium tests driving usage.py against a real browser.
+
+Requires ``dash[dev,testing]`` (tests/requirements.txt) and a Chrome/chromedriver
+available on PATH. Run with ``pytest -q``.
+"""
 from dash.testing.application_runners import import_app
+from selenium.webdriver.support.ui import WebDriverWait
 
 
-# Basic test for the component rendering.
-# The dash_duo pytest fixture is installed with dash (v1.0+)
-def test_render_component(dash_duo):
-    # Start a dash app contained as the variable `app` in `usage.py`
-    app = import_app('usage')
+def test_setprops_updates_event_in_place_without_remount(dash_duo):
+    """command {'type': 'setProps'} must mutate an existing event's title and
+    extendedProps on its existing DOM block (no remount) and refresh the
+    eventDataAttributes ``data-*`` mirror to match the new extendedProps.
+    """
+    app = import_app("usage")
     dash_duo.start_server(app)
 
-    # Get the generated component input with selenium
-    # The html input will be a children of the #input dash component
-    my_component = dash_duo.find_element('#input > input')
+    audit = '[data-event-id="audit"]'
+    dash_duo.wait_for_element(audit, timeout=10)
 
-    assert 'my-value' == my_component.get_attribute('value')
+    # Initial state: build_events("audit") + eventDataAttributes=["trainer"].
+    assert dash_duo.find_element(audit).get_attribute("data-trainer") == "AB"
+    assert "Audit" in dash_duo.find_element(audit).text
 
-    # Clear the input
-    dash_duo.clear_input(my_component)
+    # Stamp a marker on the LIVE element. Replacing the `events` prop would
+    # destroy this element and recreate it (dropping the marker); an in-place
+    # `setProps` mutation reuses the same node, so the marker must survive.
+    dash_duo.driver.execute_script(
+        "document.querySelector(arguments[0])"
+        ".setAttribute('data-remount-probe', 'kept')",
+        audit,
+    )
 
-    # Send keys to the custom input.
-    my_component.send_keys('Hello dash')
+    dash_duo.find_element("#setprops").click()
 
-    # Wait for the text to equal, if after the timeout (default 10 seconds)
-    # the text is not equal it will fail the test.
-    dash_duo.wait_for_text_to_equal('#output', 'You have entered Hello dash')
+    # Title text refreshes in place...
+    WebDriverWait(dash_duo.driver, 10).until(
+        lambda _d: "Audit (renamed" in dash_duo.find_element(audit).text
+    )
+    # ...and so does the mirrored data-* (trainer AB -> ZZ)...
+    WebDriverWait(dash_duo.driver, 10).until(
+        lambda _d: dash_duo.find_element(audit).get_attribute("data-trainer")
+        == "ZZ"
+    )
+    # ...on the very same element (marker survived => no remount).
+    assert (
+        dash_duo.find_element(audit).get_attribute("data-remount-probe")
+        == "kept"
+    )

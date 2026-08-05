@@ -49,6 +49,33 @@ const toDataAttrName = (key) => (
 );
 
 /**
+ * Mirror a whitelist of `extendedProps` keys from `event` onto DOM element `el`
+ * as kebab-cased `data-*` attributes (see eventDataAttributes / toDataAttrName).
+ * Shared by the mount hook (handleEventDidMount) and the in-place `setProps`
+ * command so both stay consistent: on mount it stamps the initial values, and
+ * after a mutation it refreshes them. `null`/missing values remove the stale
+ * attribute (a no-op at mount, where nothing was set yet); objects/arrays are
+ * JSON-encoded. Does not touch `data-event-id`.
+ */
+const mirrorEventDataAttributes = (el, event, keys) => {
+    if (!Array.isArray(keys)) {
+        return;
+    }
+    keys.forEach((key) => {
+        const attr = toDataAttrName(key);
+        const value = event.extendedProps[key];
+        if (typeof value === 'undefined' || value === null) {
+            el.removeAttribute(attr);
+            return;
+        }
+        el.setAttribute(
+            attr,
+            typeof value === 'object' ? JSON.stringify(value) : String(value)
+        );
+    });
+};
+
+/**
  * DashFullCalendar – thin Dash wrapper around @fullcalendar/react.
  * ALL props (except the Dash house‑keeping ones) are forwarded verbatim.
  * No monkey‑patching of FullCalendar internals.
@@ -87,6 +114,12 @@ const DashFullCalendar = ({
     // Holds the `info.revert()` callback from the most recent drag/resize, so a
     // `{type:"revert"}` command can undo it natively (see command handler).
     const lastRevertRef = useRef(null);
+    // Latest eventDataAttributes, read by the command effect when it re-mirrors
+    // data-* after a setProps mutation. Kept in a ref so the effect can stay
+    // gated on `command` alone (see its deps) instead of re-firing — and thus
+    // re-dispatching the last command — whenever this config prop changes.
+    const eventDataAttributesRef = useRef(eventDataAttributes);
+    eventDataAttributesRef.current = eventDataAttributes;
 
     // Resolve premium plugin name-strings to the statically-imported plugin
     // objects. Gated on schedulerLicenseKey to preserve the original API and
@@ -188,6 +221,55 @@ const DashFullCalendar = ({
                         _command.options || {}
                     );
                 }
+                break;
+            }
+            case "setProps": {
+                // In-place update of an existing event's title / extendedProps
+                // by id, using EventApi.setProp / setExtendedProp, so a wrapper
+                // app can change event data WITHOUT replacing the whole `events`
+                // prop (which remounts every block). Accepts a batch
+                // (`updates: [{id, title?, extendedProps?}, ...]`) or the
+                // single-event shorthand ({id, title?, extendedProps?}) for
+                // symmetry with setDates.
+                const updates = Array.isArray(_command.updates)
+                    ? _command.updates
+                    : [_command];
+                updates.forEach((upd) => {
+                    if (!upd || !upd.id) {
+                        return;
+                    }
+                    const ev = api.getEventById(upd.id);
+                    if (!ev) {
+                        // Skip missing ids silently.
+                        return;
+                    }
+                    if (typeof upd.title !== "undefined") {
+                        ev.setProp("title", upd.title);
+                    }
+                    if (upd.extendedProps && typeof upd.extendedProps === "object") {
+                        Object.keys(upd.extendedProps).forEach((key) => {
+                            ev.setExtendedProp(key, upd.extendedProps[key]);
+                        });
+                    }
+                    // Re-mirror data-* onto this event's block root(s): the
+                    // mount hook only runs at mount, so an in-place mutation
+                    // would otherwise leave stale data-* attributes. Match on
+                    // the stamped data-event-id (unchanged here) rather than
+                    // building an escaped selector from a caller-supplied id.
+                    if (api.el) {
+                        api.el
+                            .querySelectorAll("[data-event-id]")
+                            .forEach((el) => {
+                                if (el.getAttribute("data-event-id") === String(upd.id)) {
+                                    mirrorEventDataAttributes(
+                                        el,
+                                        ev,
+                                        eventDataAttributesRef.current
+                                    );
+                                }
+                            });
+                    }
+                });
                 break;
             }
             case "revert":
@@ -423,20 +505,7 @@ const DashFullCalendar = ({
             if (info.event.id) {
                 info.el.setAttribute("data-event-id", info.event.id);
             }
-            if (Array.isArray(eventDataAttributes)) {
-                eventDataAttributes.forEach((key) => {
-                    const value = info.event.extendedProps[key];
-                    if (typeof value === "undefined" || value === null) {
-                        return;
-                    }
-                    info.el.setAttribute(
-                        toDataAttrName(key),
-                        typeof value === "object"
-                            ? JSON.stringify(value)
-                            : String(value)
-                    );
-                });
-            }
+            mirrorEventDataAttributes(info.el, info.event, eventDataAttributes);
             // Last, so a caller-supplied handler can inspect or override.
             if (typeof userEventDidMount === "function") {
                 userEventDidMount(info);
@@ -966,10 +1035,13 @@ DashFullCalendar.propTypes = {
      *
      * Caveat: mirroring happens when the block mounts. Replacing the `events`
      * prop re-parses the source, so blocks remount and the attributes refresh.
-     * In-place mutations via the imperative `command` prop (`setDates`,
-     * `setResources`) and drag/resize reuse the existing element and do not
-     * re-run the mount hook — they also do not change `extendedProps`, so don't
-     * mirror a key you intend to mutate that way.
+     * In-place `command` mutations that only move an event (`setDates`,
+     * `setResources`) and drag/resize reuse the existing element without
+     * re-running the mount hook and do not change `extendedProps`, so their
+     * mirrors are left as-is (correctly — the values didn't change). The one
+     * command that DOES change `extendedProps`, `setProps`, re-mirrors the
+     * affected keys onto the reused element itself, so a key you mutate via
+     * `setProps` stays consistent with the DOM.
      */
     eventDataAttributes: PropTypes.arrayOf(PropTypes.string),
     /**
@@ -1165,6 +1237,15 @@ DashFullCalendar.propTypes = {
      *   to move an event between resources (EventApi.setResources);
      * {'type': 'setDates', 'id': '<id>', 'start': ISO, 'end'?: ISO}
      *   to reschedule an event (EventApi.setDates);
+     * {'type': 'setProps', 'updates': [{'id': '<id>', 'title'?: '<str>',
+     *   'extendedProps'?: {<key>: <val>, ...}}, ...]} to update existing
+     *   events' title / extendedProps in place (EventApi.setProp /
+     *   setExtendedProp) WITHOUT replacing the whole `events` prop — which
+     *   would remount every block. The single-event shorthand
+     *   {'type': 'setProps', 'id': '<id>', 'title'?, 'extendedProps'?} is
+     *   also accepted (symmetry with setDates). Missing ids are skipped
+     *   silently; any `eventDataAttributes` data-* mirrors are refreshed on
+     *   the updated block(s).
      * {'type': 'revert'} to undo the most recent drag/resize (info.revert()).
      * Include a nonce/counter so repeated commands change by reference.
      */
