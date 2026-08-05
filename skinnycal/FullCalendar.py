@@ -66,9 +66,18 @@ Keyword arguments:
     'setResources', 'id': '<id>', 'resourceIds': ['<id>', ...]}    to
     move an event between resources (EventApi.setResources);  {'type':
     'setDates', 'id': '<id>', 'start': ISO, 'end'?: ISO}    to
-    reschedule an event (EventApi.setDates);  {'type': 'revert'} to
-    undo the most recent drag/resize (info.revert()).  Include a
-    nonce/counter so repeated commands change by reference.
+    reschedule an event (EventApi.setDates);  {'type': 'setProps',
+    'updates': [{'id': '<id>', 'title'?: '<str>',    'extendedProps'?:
+    {<key>: <val>, ...}}, ...]} to update existing    events' title /
+    extendedProps in place (EventApi.setProp /    setExtendedProp)
+    WITHOUT replacing the whole `events` prop — which    would remount
+    every block. The single-event shorthand    {'type': 'setProps',
+    'id': '<id>', 'title'?, 'extendedProps'?} is    also accepted
+    (symmetry with setDates). Missing ids are skipped    silently; any
+    `eventDataAttributes` data-* mirrors are refreshed on    the
+    updated block(s).  {'type': 'revert'} to undo the most recent
+    drag/resize (info.revert()).  Include a nonce/counter so repeated
+    commands change by reference.
 
 - contentHeight (number | string; optional):
     Height of the scrollable content area.  See FullCalendar docs.
@@ -191,11 +200,14 @@ Keyword arguments:
     a non-empty id), which needs no configuration.    Caveat:
     mirroring happens when the block mounts. Replacing the `events`
     prop re-parses the source, so blocks remount and the attributes
-    refresh.  In-place mutations via the imperative `command` prop
+    refresh.  In-place `command` mutations that only move an event
     (`setDates`,  `setResources`) and drag/resize reuse the existing
-    element and do not  re-run the mount hook — they also do not
-    change `extendedProps`, so don't  mirror a key you intend to
-    mutate that way.
+    element without  re-running the mount hook and do not change
+    `extendedProps`, so their  mirrors are left as-is (correctly — the
+    values didn't change). The one  command that DOES change
+    `extendedProps`, `setProps`, re-mirrors the  affected keys onto
+    the reused element itself, so a key you mutate via  `setProps`
+    stays consistent with the DOM.
 
 - eventDisplay (string; optional):
     Rendering style for events.  See FullCalendar docs.
