@@ -97,6 +97,226 @@ kebab-cased (`courseCode` → `data-course-code` → `el.dataset.courseCode`) an
 applied when a block mounts; see `PREMIUM_FORK_CHANGES.md` for the caveat about
 imperative `command` mutations. `usage.py` is a runnable demo of all of this.
 
+### Context menu (right-click)
+
+FullCalendar has no documented right-click callback, so skinnycal adds one. Set
+`contextMenuEnabled=True` and skinnycal listens for the browser's native
+`contextmenu` event inside the calendar, works out **what** was right-clicked
+(an event, a date/time slot, and/or a resource), suppresses the browser menu for
+that target, and reports the context through the read-only `contextMenu` prop.
+
+**skinnycal emits the context only — it does not render the menu, decide which
+actions are available, or execute anything.** You draw the menu with whatever you
+like (a plain `html.Div`, a component library, or a fully client-side menu) and
+handle the chosen action yourself.
+
+```python
+from dash import Input, Output, callback, html
+from dash.exceptions import PreventUpdate
+import skinnycal as dcal
+
+calendar = dcal.FullCalendar(
+    id="calendar",
+    contextMenuEnabled=True,
+    initialView="resourceTimelineWeek",
+    resources=resources,
+    events=events,
+)
+
+@callback(
+    Output("calendar-menu", "children"),
+    Output("calendar-menu", "style"),
+    Input("calendar", "contextMenu"),
+    prevent_initial_call=True,
+)
+def open_context_menu(context):
+    if not context:
+        raise PreventUpdate
+    js = context["jsEvent"]
+    return build_actions(context), {
+        "display": "block",
+        "position": "fixed",
+        "left": f"{js['clientX']}px",
+        "top": f"{js['clientY']}px",
+    }
+```
+
+The `contextMenu` payload always has the same top-level keys (anything
+unavailable is `null`):
+
+```python
+{
+    "sequence": 12,                 # increments on every right-click, so two
+                                    #   identical right-clicks still fire Dash
+    "target": "event",              # "event" | "date" | "resource"
+    "calendarId": "calendar",
+    "viewType": "resourceTimeline",
+    "date": {"start": "2026-08-19", "allDay": True, "timeZone": "local"},
+    "resource": {"id": "course-42", "title": "Course 42", "extendedProps": {}},
+    "event": {                      # snapshot of the right-clicked event
+        "id": "bead-123", "groupId": "", "title": "Module A",
+        "start": "2026-08-19", "end": "2026-08-20", "allDay": True,
+        "display": "auto", "extendedProps": {"courseCode": "ABC"},
+        "resourceIds": ["course-42"],
+    },
+    "jsEvent": {                    # pointer position + modifier keys
+        "clientX": 812, "clientY": 376, "pageX": 812, "pageY": 541,
+        "button": 2, "altKey": False, "ctrlKey": False,
+        "metaKey": False, "shiftKey": False,
+    },
+}
+```
+
+Notes and caveats:
+
+- **Target precedence is `event` → `date` → `resource`.** Right-clicking an event
+  reports `target: "event"` but still fills in the underlying `date`/`resource`
+  when they can be resolved; an empty resource-timeline slot reports
+  `target: "date"` with a `resource`; a resource label reports
+  `target: "resource"` with no date.
+- **The date is the rendered *slot start*, not a sub-slot position**, and a named
+  timezone is **not** appended to the string — it is supplied separately as
+  `date.timeZone`. Client-side you may pass the string straight back to
+  FullCalendar; server-side, interpret it in `date.timeZone`. Exact `dateClick`
+  parity (snap-duration subdivisions, named-timezone offsets) is out of scope.
+- **Give actionable events a stable `id`** so they resolve via FullCalendar's live
+  API; anonymous events fall back to a mount-time snapshot.
+- **Foreground events are guaranteed targets.** Background events are treated as
+  date/resource context unless their DOM element participates in pointer hit
+  testing (some views render them with `pointer-events: none`).
+- The browser menu is suppressed **only** for a recognized calendar target —
+  right-clicking toolbar buttons or other chrome keeps the normal browser menu.
+- **Accessibility:** don't rely on right-click alone — provide a keyboard- or
+  click-accessible way to reach the same actions.
+
+#### Dismissing the menu
+
+Because the menu is yours, so is closing it — skinnycal has nothing to hide. The
+usual behaviour ("click anywhere else to dismiss") is a few lines, but there is
+one **gotcha worth stating up front**: dismiss the menu *through* Dash, not by
+mutating the DOM.
+
+If your `open` callback owns `menu.style` and you hide the menu by setting
+`element.style.display = 'none'` directly (e.g. from a raw `document` listener),
+React's virtual DOM still believes the style is `display:'block'`. On the next
+right-click your callback returns `display:'block'` again, React diffs
+`block → block`, sees no change, and **never re-shows the menu** — it stays hidden
+until a page refresh. The fix is to route the dismissal through Dash so React
+stays authoritative. A compact, no-round-trip pattern: one persistent `document`
+listener that just clicks a hidden button, plus a clientside callback that flips
+the style via Dash.
+
+```python
+from dash import Input, Output
+
+# In the layout, alongside the menu Div:
+#   html.Div(id="calendar-menu", style={"display": "none"}),
+#   html.Button(id="menu-dismiss", style={"display": "none"}),
+#   html.Div(id="menu-init", style={"display": "none"}),  # dummy output
+
+# Install ONE document listener the first time a menu opens. On an outside
+# mousedown it clicks the hidden button (clicks inside the menu are ignored, so
+# your action items keep working).
+app.clientside_callback(
+    """
+    function(context) {
+        if (!window.__menuBound) {
+            window.__menuBound = true;
+            document.addEventListener('mousedown', function(e) {
+                var menu = document.getElementById('calendar-menu');
+                if (!menu || menu.style.display === 'none') { return; }
+                if (menu.contains(e.target)) { return; }
+                document.getElementById('menu-dismiss').click();
+            }, true);
+        }
+        return window.dash_clientside.no_update;
+    }
+    """,
+    Output("menu-init", "children"),
+    Input("calendar", "contextMenu"),
+    prevent_initial_call=True,
+)
+
+# Hide the menu THROUGH Dash. allow_duplicate is needed because the open
+# callback also writes calendar-menu.style.
+app.clientside_callback(
+    "function(n) { return {'display': 'none'}; }",
+    Output("calendar-menu", "style", allow_duplicate=True),
+    Input("menu-dismiss", "n_clicks"),
+    prevent_initial_call=True,
+)
+```
+
+This also handles right-clicking a *different* target while a menu is open: the
+new right-click's `contextmenu` simply re-opens with fresh context.
+
+#### Interactive menu actions
+
+The items in the menu are ordinary Dash components, so making them *do* something
+is just normal callbacks. The only wrinkle is that an action fires later than the
+right-click, so it needs to know **what** was clicked: stash the context in a
+`dcc.Store` when the menu opens, then read it back with `State` in each action.
+
+```python
+from dash import dcc, html, Input, Output, State
+from dash.exceptions import PreventUpdate
+
+# Layout: fixed-id action buttons live inside the menu; open_context_menu shows
+# the ones that apply to the target and stores the context.
+#   dcc.Store(id="ctx-context"),
+#   html.Div(id="calendar-menu", style={"display": "none"}, children=[
+#       html.Button("Move +1 day", id="act-move", n_clicks=0),
+#       ...
+#   ])
+
+@callback(
+    Output("calendar-menu", "style"),
+    Output("ctx-context", "data"),          # <- stash the context
+    # ... plus per-button styles to show/hide by target ...
+    Input("calendar", "contextMenu"),
+    prevent_initial_call=True,
+)
+def open_context_menu(context):
+    if not context:
+        raise PreventUpdate
+    js = context["jsEvent"]
+    return {"display": "block", "position": "fixed",
+            "left": f"{js['clientX']}px", "top": f"{js['clientY']}px"}, context
+
+@callback(
+    Output("calendar", "events", allow_duplicate=True),
+    Output("calendar-menu", "style", allow_duplicate=True),   # close the menu
+    Input("act-move", "n_clicks"),
+    State("ctx-context", "data"),           # <- what was right-clicked
+    State("calendar", "events"),
+    prevent_initial_call=True,
+)
+def action_move(_n, context, events):
+    if not context or context["target"] != "event":
+        raise PreventUpdate
+    target_id = context["event"]["id"]
+    events = [dict(e) for e in events]
+    for e in events:
+        if e.get("id") == target_id:
+            e["start"] = shift_one_day(e["start"])
+    return events, {"display": "none"}
+```
+
+Two things worth keeping consistent:
+
+- **Pick one state model.** Drive changes through the `events` prop *or* through
+  in-place `command`s (`setProps` / `setDates`), but
+  don't mix them for the same data. A `command` mutates a block **without**
+  updating the `events` prop, so a later callback that returns a fresh `events`
+  list (read from a now-stale `State("calendar", "events")`) will silently undo
+  it. If you want in-place commands, keep your own authoritative event state
+  rather than reading `events` back.
+- Actions that also write `calendar-menu.style` (to close the menu) need
+  `allow_duplicate=True`, since `open_context_menu` owns that prop too.
+
+`usage.py` includes a runnable context-menu demo — contextual actions (rename /
+move / add), dismissal, and all.
+
 ---
 
 ## Repository layout
@@ -135,7 +355,8 @@ imperative `command` mutations. `usage.py` is a runnable demo of all of this.
 3. **Run tests**
 
    ```bash
-   pytest -q
+   npm run test:js   # Jest unit tests for the pure hit-resolution helpers
+   pytest -q         # Dash/Selenium integration tests
    ```
 
 ---
