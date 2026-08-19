@@ -250,7 +250,72 @@ app.clientside_callback(
 This also handles right-clicking a *different* target while a menu is open: the
 new right-click's `contextmenu` simply re-opens with fresh context.
 
-`usage.py` includes a runnable context-menu demo, dismissal included.
+#### Interactive menu actions
+
+The items in the menu are ordinary Dash components, so making them *do* something
+is just normal callbacks. The only wrinkle is that an action fires later than the
+right-click, so it needs to know **what** was clicked: stash the context in a
+`dcc.Store` when the menu opens, then read it back with `State` in each action.
+
+```python
+from dash import dcc, html, Input, Output, State
+from dash.exceptions import PreventUpdate
+
+# Layout: fixed-id action buttons live inside the menu; open_context_menu shows
+# the ones that apply to the target and stores the context.
+#   dcc.Store(id="ctx-context"),
+#   html.Div(id="calendar-menu", style={"display": "none"}, children=[
+#       html.Button("Move +1 day", id="act-move", n_clicks=0),
+#       ...
+#   ])
+
+@callback(
+    Output("calendar-menu", "style"),
+    Output("ctx-context", "data"),          # <- stash the context
+    # ... plus per-button styles to show/hide by target ...
+    Input("calendar", "contextMenu"),
+    prevent_initial_call=True,
+)
+def open_context_menu(context):
+    if not context:
+        raise PreventUpdate
+    js = context["jsEvent"]
+    return {"display": "block", "position": "fixed",
+            "left": f"{js['clientX']}px", "top": f"{js['clientY']}px"}, context
+
+@callback(
+    Output("calendar", "events", allow_duplicate=True),
+    Output("calendar-menu", "style", allow_duplicate=True),   # close the menu
+    Input("act-move", "n_clicks"),
+    State("ctx-context", "data"),           # <- what was right-clicked
+    State("calendar", "events"),
+    prevent_initial_call=True,
+)
+def action_move(_n, context, events):
+    if not context or context["target"] != "event":
+        raise PreventUpdate
+    target_id = context["event"]["id"]
+    events = [dict(e) for e in events]
+    for e in events:
+        if e.get("id") == target_id:
+            e["start"] = shift_one_day(e["start"])
+    return events, {"display": "none"}
+```
+
+Two things worth keeping consistent:
+
+- **Pick one state model.** Drive changes through the `events` prop *or* through
+  in-place `command`s (`setProps` / `setDates`), but
+  don't mix them for the same data. A `command` mutates a block **without**
+  updating the `events` prop, so a later callback that returns a fresh `events`
+  list (read from a now-stale `State("calendar", "events")`) will silently undo
+  it. If you want in-place commands, keep your own authoritative event state
+  rather than reading `events` back.
+- Actions that also write `calendar-menu.style` (to close the menu) need
+  `allow_duplicate=True`, since `open_context_menu` owns that prop too.
+
+`usage.py` includes a runnable context-menu demo — contextual actions (rename /
+move / add), dismissal, and all.
 
 ---
 
