@@ -1,4 +1,5 @@
 from dash import Dash, html, Input, Output, State
+from dash.exceptions import PreventUpdate
 import skinnycal as dcal
 
 app = Dash(__name__)
@@ -70,6 +71,11 @@ app.layout = html.Div(
             initialDate="2025-08-01",
             editable=True,
             selectable=True,
+            # Native right-click bridge (skinnycal >= 0.4.0): right-clicking an
+            # event, a day/time slot, or a resource lane emits `contextMenu`
+            # (see the callback below). skinnycal emits the context only — the
+            # app renders and positions the menu itself.
+            contextMenuEnabled=True,
             # FullCalendar props passed unchanged:
             headerToolbar={"left": "prev,next today", "center": "title",
                            "right": "dayGridMonth,timeGridWeek"},
@@ -77,6 +83,13 @@ app.layout = html.Div(
             eventDataAttributes=["trainer"],
         ),
         html.Div(id="clicked"),
+        # App-owned context menu. skinnycal never renders this.
+        html.Div(id="ctx-menu", style={"display": "none"}),
+        # Hidden button an outside-click clicks to dismiss the menu *through*
+        # Dash (see the dismissal callbacks below), plus a dummy output for the
+        # one-time listener installer.
+        html.Button(id="ctx-dismiss", style={"display": "none"}),
+        html.Div(id="ctx-menu-init", style={"display": "none"}),
     ],
     style={
             "paddingLeft": "20%",
@@ -89,6 +102,88 @@ app.layout = html.Div(
 @app.callback(Output("clicked", "children"), Input("cal", "dateClick"))
 def show_click(date):
     return f"You clicked {date}" if date else "Click a date on the calendar."
+
+
+# Dismiss the app-owned menu on any left-click outside it. This is the app's
+# job, not skinnycal's: skinnycal reports the right-click context but never
+# renders or owns the menu, so it has nothing to hide.
+#
+# The dismissal must go THROUGH Dash, not by mutating the DOM directly: the open
+# callback below owns `ctx-menu.style`, so if we set `display:'none'` behind
+# React's back, React still believes the style is `display:'block'` and — on the
+# next right-click, which returns `display:'block'` again — sees no change and
+# never re-shows the menu (it stays hidden until a page refresh). So instead a
+# one-time document listener just *clicks a hidden button*, and a clientside
+# callback flips `ctx-menu.style` to hidden via Dash, keeping React in sync.
+app.clientside_callback(
+    """
+    function(context) {
+        if (!window.__skinnycalCtxBound) {
+            window.__skinnycalCtxBound = true;
+            document.addEventListener('mousedown', function(e) {
+                var menu = document.getElementById('ctx-menu');
+                if (!menu || menu.style.display === 'none') { return; }
+                // Keep the menu open for clicks inside it (e.g. action items).
+                if (menu.contains(e.target)) { return; }
+                document.getElementById('ctx-dismiss').click();
+            }, true);
+        }
+        return window.dash_clientside.no_update;
+    }
+    """,
+    Output("ctx-menu-init", "children"),
+    Input("cal", "contextMenu"),
+    prevent_initial_call=True,
+)
+
+# Flip the menu to hidden through Dash so React's virtual DOM stays authoritative
+# (allow_duplicate: the open callback also writes ctx-menu.style).
+app.clientside_callback(
+    "function(n) { return {'display': 'none'}; }",
+    Output("ctx-menu", "style", allow_duplicate=True),
+    Input("ctx-dismiss", "n_clicks"),
+    prevent_initial_call=True,
+)
+
+
+@app.callback(
+    Output("ctx-menu", "children"),
+    Output("ctx-menu", "style"),
+    Input("cal", "contextMenu"),
+    prevent_initial_call=True,
+)
+def open_context_menu(context):
+    """Render an app-owned menu at the pointer for a recognized right-click.
+
+    skinnycal only reports *what* was right-clicked (target type + date /
+    resource / event context + pointer coordinates) via the `contextMenu`
+    prop; deciding the actions and drawing the menu is entirely the app's job.
+    """
+    if not context:
+        raise PreventUpdate
+
+    js = context["jsEvent"]
+    target = context["target"]
+    if target == "event":
+        label = f"Event: {context['event']['title']}"
+    elif target == "date":
+        label = f"Date: {context['date']['start']}"
+    else:
+        label = f"Resource: {context['resource']['id']}"
+
+    style = {
+        "display": "block",
+        "position": "fixed",
+        "left": f"{js['clientX']}px",
+        "top": f"{js['clientY']}px",
+        "background": "#fff",
+        "border": "1px solid #ccc",
+        "borderRadius": "4px",
+        "boxShadow": "0 2px 8px rgba(0,0,0,0.15)",
+        "padding": "6px 10px",
+        "zIndex": 1000,
+    }
+    return label, style
 
 
 @app.callback(

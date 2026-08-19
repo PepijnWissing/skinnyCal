@@ -282,3 +282,12 @@ GitHub.sublime-settings
 # Julia manifest file names
 Manifest.toml
 JuliaManifest.toml
+/.idea/misc.xml
+/.idea/skinnyCal.iml
+/.idea/vcs.xml
+/.idea/codeStyles/Project.xml
+/.idea/inspectionProfiles/Project_Default.xml
+/.idea/inspectionProfiles/profiles_settings.xml
+/.idea/modules.xml
+/.idea/codeStyles/codeStyleConfig.xml
+/CLAUDE.md

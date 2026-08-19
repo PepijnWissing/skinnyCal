@@ -18,6 +18,8 @@ import resourceTimeGridPlugin from "@fullcalendar/resource-timegrid";
 import resourcePlugin from "@fullcalendar/resource";
 import scrollGridPlugin from "@fullcalendar/scrollgrid";
 
+import {buildContextMenuPayload} from "../contextMenu";
+
 
 /**
  * Normalize FullCalendar's ClassNamesGenerator shape
@@ -99,18 +101,35 @@ const DashFullCalendar = ({
     // forwarded to FullCalendar as options — our handlers are wired below).
     eventMouseEnter: _eventMouseEnter,
     eventMouseLeave: _eventMouseLeave,
-    // Per-event decoration seam. These three are pulled out because we install
+    // Per-event decoration seam. These four are pulled out because we install
     // internal defaults for them; our handlers compose the caller's value in
-    // rather than replacing it (see handleEventClassNames / handleEventDidMount).
+    // rather than replacing it (see handleEventClassNames / handleEventDidMount /
+    // handleEventWillUnmount).
     eventClassNames: userEventClassNames,
     eventDidMount: userEventDidMount,
+    eventWillUnmount: userEventWillUnmount,
     eventDataAttributes,
     schedulerLicenseKey,
     plugins: userPlugins,
+    // Native right-click bridge. Both are skinnycal-specific and must not be
+    // forwarded to FullCalendar (contextMenu is an output data prop, like the
+    // other bridged callbacks; contextMenuEnabled toggles the listener).
+    contextMenuEnabled = false,
+    contextMenu: _contextMenu,
     // anything else the user supplies:
     ...calendarProps
 }) => {
     const calRef = useRef(null);
+    // The skinnycal outer <div>. Right-click detection is scoped to it so
+    // several calendars on one page never resolve against each other's DOM.
+    const rootRef = useRef(null);
+    // Monotonically increasing so two right-clicks at the identical location
+    // still produce a distinct `contextMenu` value (Dash dedupes by value).
+    const contextSequenceRef = useRef(0);
+    // Maps a mounted event's DOM element -> its EventApi, as a fallback for
+    // resolving anonymous events (no public id) under the pointer. Keyed weakly
+    // so entries drop when FullCalendar unmounts the block.
+    const mountedEventsRef = useRef(new WeakMap());
     // Holds the `info.revert()` callback from the most recent drag/resize, so a
     // `{type:"revert"}` command can undo it natively (see command handler).
     const lastRevertRef = useRef(null);
@@ -506,6 +525,9 @@ const DashFullCalendar = ({
                 info.el.setAttribute("data-event-id", info.event.id);
             }
             mirrorEventDataAttributes(info.el, info.event, eventDataAttributes);
+            // Remember this element -> EventApi so the context-menu bridge can
+            // resolve anonymous events (no public id) that getEventById can't.
+            mountedEventsRef.current.set(info.el, info.event);
             // Last, so a caller-supplied handler can inspect or override.
             if (typeof userEventDidMount === "function") {
                 userEventDidMount(info);
@@ -514,8 +536,58 @@ const DashFullCalendar = ({
         [eventDataAttributes, userEventDidMount]
     );
 
+    // Drop the WeakMap entry when the block unmounts, then defer to the caller.
+    const handleEventWillUnmount = useCallback(
+        (info) => {
+            mountedEventsRef.current.delete(info.el);
+            if (typeof userEventWillUnmount === "function") {
+                userEventWillUnmount(info);
+            }
+        },
+        [userEventWillUnmount]
+    );
+
+    /* ---------- Native right-click (contextmenu) bridge ---------- */
+
+    // One delegated listener on the skinnycal root. Installed only when
+    // contextMenuEnabled; the browser menu is suppressed *only* for a
+    // recognized calendar target, so right-clicks on toolbar chrome keep it.
+    useEffect(() => {
+        const root = rootRef.current;
+        if (!contextMenuEnabled || !root) {
+            return () => {};
+        }
+
+        const handleContextMenu = (jsEvent) => {
+            const payload = buildContextMenuPayload({
+                root,
+                api: calRef.current?.getApi(),
+                jsEvent,
+                mountedEvents: mountedEventsRef.current,
+                calendarId: id,
+                sequence: ++contextSequenceRef.current
+            });
+            if (!payload) {
+                // Unrecognized chrome: leave the native menu alone.
+                return;
+            }
+            jsEvent.preventDefault();
+            if (setProps) {
+                setProps({contextMenu: payload});
+            }
+        };
+
+        // Capture phase: FullCalendar / nested app content might otherwise
+        // stopPropagation. We intentionally don't stopPropagation ourselves so
+        // other app-level observers still see the event.
+        root.addEventListener("contextmenu", handleContextMenu, true);
+        return () => {
+            root.removeEventListener("contextmenu", handleContextMenu, true);
+        };
+    }, [contextMenuEnabled, id, setProps]);
+
     return (
-        <div id={id}>
+        <div id={id} ref={rootRef}>
             <FullCalendar
                 ref={calRef}
                 plugins={[
@@ -545,6 +617,7 @@ const DashFullCalendar = ({
                 eventMouseLeave={handleEventMouseLeave}
                 eventClassNames={handleEventClassNames}
                 eventDidMount={handleEventDidMount}
+                eventWillUnmount={handleEventWillUnmount}
             />
         </div>
     );
@@ -1227,6 +1300,33 @@ DashFullCalendar.propTypes = {
      * Callback when an external event is removed.  See FullCalendar docs.
      */
     eventLeave: PropTypes.func,
+
+    /**
+     * Enable native browser context-menu (right-click) detection inside
+     * recognized calendar events, date/time slots, and resource lanes.
+     * Disabled by default. When false no listener is installed and the browser
+     * menu behaves normally everywhere. When true, right-clicking a recognized
+     * calendar target emits `contextMenu` and suppresses the browser menu for
+     * that target only; right-clicks on toolbar controls or other unrecognized
+     * chrome keep the normal browser menu. skinnycal emits the context only —
+     * it does not render the menu.
+     */
+    contextMenuEnabled: PropTypes.bool,
+
+    /**
+     * JSON-serializable description of the most recent recognized right-click,
+     * for use in Dash callbacks. Contains `target` ("event" | "date" |
+     * "resource", precedence in that order), `calendarId`, `viewType`, the
+     * resolved `date` ({start, allDay, timeZone}), `resource`
+     * ({id, title, extendedProps}), `event` (snapshot incl. `resourceIds`),
+     * `jsEvent` (pointer coordinates + modifier keys), and a monotonically
+     * increasing `sequence` so repeated right-clicks at the same location still
+     * produce a distinct value. All top-level keys are always present; anything
+     * unavailable is null. Typed `any` (not `func`) so
+     * dash-generate-components exposes it as a Dash prop. See README for the
+     * slot-start / timezone caveats.
+     */
+    contextMenu: PropTypes.any,
 
     /**
      * An object specifying a command to execute on the calendar API. Each type

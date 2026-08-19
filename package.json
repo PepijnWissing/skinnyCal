@@ -1,8 +1,8 @@
 {
   "name": "skinnycal",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "A Plotly Dash wrapper for FullCalendar",
-"repository": {
+  "repository": {
     "type": "git",
     "url": "git+https://github.com/PepijnWissing/skinnyCal.git"
   },
@@ -19,24 +19,34 @@
     "build:backends": "dash-generate-components ./src/lib/components skinnycal -p package-info.json --r-prefix '' --jl-prefix '' --ignore \\.test\\.",
     "build:backends-activated": "(. venv/bin/activate || venv\\scripts\\activate && npm run build:backends)",
     "build": "npm run build:js && npm run build:backends",
-    "build:activated": "npm run build:js && npm run build:backends-activated"
+    "build:activated": "npm run build:js && npm run build:backends-activated",
+    "test:js": "jest"
+  },
+  "jest": {
+    "testEnvironment": "node",
+    "roots": [
+      "<rootDir>/src"
+    ],
+    "testMatch": [
+      "<rootDir>/src/**/*.test.js"
+    ]
   },
   "author": "Scott Kilgore <skilgore@landmarktx.com>",
   "license": "MIT",
   "dependencies": {
-    "ramda": "^0.26.1",
-    "@fullcalendar/react": "^6.1.18",
+    "@fullcalendar/adaptive": "^6.1.18",
     "@fullcalendar/core": "^6.1.18",
     "@fullcalendar/daygrid": "^6.1.18",
-    "@fullcalendar/timegrid": "^6.1.18",
+    "@fullcalendar/interaction": "^6.1.18",
     "@fullcalendar/list": "^6.1.18",
     "@fullcalendar/multimonth": "^6.1.18",
-    "@fullcalendar/interaction": "^6.1.18",
-    "@fullcalendar/scrollgrid": "^6.1.18",
-    "@fullcalendar/adaptive": "^6.1.18",
+    "@fullcalendar/react": "^6.1.18",
     "@fullcalendar/resource": "^6.1.18",
     "@fullcalendar/resource-timegrid": "^6.1.18",
-    "@fullcalendar/resource-timeline": "^6.1.18"
+    "@fullcalendar/resource-timeline": "^6.1.18",
+    "@fullcalendar/scrollgrid": "^6.1.18",
+    "@fullcalendar/timegrid": "^6.1.18",
+    "ramda": "^0.26.1"
   },
   "devDependencies": {
     "@babel/core": "^7.22.1",
@@ -46,6 +56,7 @@
     "@plotly/dash-component-plugins": "^1.2.3",
     "@plotly/webpack-dash-dynamic-import": "^1.2.0",
     "babel-eslint": "^10.1.0",
+    "babel-jest": "^29.7.0",
     "babel-loader": "^9.1.2",
     "copyfiles": "^2.1.1",
     "css-loader": "^6.8.1",
@@ -53,6 +64,7 @@
     "eslint-config-prettier": "^6.0.0",
     "eslint-plugin-import": "^2.18.0",
     "eslint-plugin-react": "^7.14.2",
+    "jest": "^29.7.0",
     "prop-types": "^15.8.1",
     "react": "^16.8.6",
     "react-docgen": "^5.4.3",
